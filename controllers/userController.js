@@ -1,6 +1,7 @@
 import userModel from  '../models/userModels.js';
 import { hash } from 'bcrypt';
 import { ObjectId } from 'mongodb';
+import redis from '../db/redisClient.js';
 
 class userController{
     
@@ -8,13 +9,25 @@ class userController{
 static getAllUsers = async (req, res) => {
     // res.header('Access-Control-Allow-Origin','*')
      try {
- 
+
+        const cachedUsers = await redis.get('mongoUsers');
+        if (cachedUsers) {
+            console.log('datos obtenidos desde redis')
+            return res.json(JSON.parse(cachedUsers));
+            }
+          
+           
+   
+            
          const results = await userModel.getAllUsers();
 
          if (!results) {
             return res.status(404).json({ message: "No users found" });
             
          }
+
+         await redis.set('mongoUsers', JSON.stringify(results), 'EX', 60);
+
          res.json(results);
      } catch (err) {
          console.error('Error ejecutando la consulta:', err);
@@ -27,10 +40,26 @@ static getAllUsers = async (req, res) => {
  static getUserById= async (req,res)=>{
     try{
         const {id} = req.params;
+
+        const cachedUser= await redis.get(`mongoUser:${id}`)
+
+        if (cachedUser) {
+         console.log('Datos obtenidos desde redis')
+         return res.status(200).json(JSON.parse(cachedUser))
+         
+        }
+ 
+
+
         const results = await userModel.getUserById(id);
         if(!results){
             return res.status(404).json({message:"User not found"})
             }
+
+
+            await redis.set(`mongoUser:${id}`,JSON.stringify(results),'EX',600)
+
+            
             res.json(results);
             }catch(error){
                 console.error('Error ejecutando la consulta:', error);
@@ -50,7 +79,12 @@ static  createUser = async (req, res) => {
 
        }
 console.log(apellido)
+
+
         const results = await userModel.createUser(name,apellido, cedula,email, password);
+
+        await redis.del('mongoUsers');
+
         res.json(results);
         } catch (error) {
             console.error('Error ejecutando la consulta:', error);
